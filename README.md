@@ -21,6 +21,22 @@ conda create -n venv python=3.12
 conda activate venv
 ```
 
+## 📜 Overview
+
+This project implements a complete ML workflow:
+
+- Data ingestion (raw to processed)
+
+- Exploratory data analysis in notebooks
+
+- Feature engineering & preprocessing
+
+- Model training & evaluation
+
+- Deployment-ready artifacts for inference
+
+Currently, the repo contains environment setup instructions for Python 3.12 using Conda, along with a scaffolded project structure.
+
 ## 🛠 Install Dependencies
 
 Once your environment is activated, install required dependencies:
@@ -31,24 +47,15 @@ pip install -r requirements.txt
 
 (Add a requirements.txt file listing your project dependencies.)
 
-## 📂 Project Structure
-
-ml-pipeline/
-│
-├── data/ # Raw and processed datasets
-├── notebooks/ # Jupyter notebooks for experimentation
-├── src/ # Source code for the ML pipeline
-├── venv/ # Conda virtual environment (if using -p option)
-├── requirements.txt # Python dependencies
-└── README.md # Project documentation
-
 ## 📌 Notes
 
-Make sure you are using Python 3.12.
+- Use Python 3.12 for maximum compatibility.
 
-Avoid spaces in directory paths when creating environments.
+- Avoid spaces in directory paths when creating environments.
 
-This repo is currently empty — push code and update the README as the project evolves.
+- Keep raw data immutable — always store processed outputs in data/processed/.
+
+- This repo is under active development — update the README as the project evolves.
 
 ## 🧑‍💻 Author
 

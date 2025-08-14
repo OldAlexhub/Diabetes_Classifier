@@ -1,10 +1,3 @@
-# app.py
-# Streamlit Diabetes Classifier for your single dataset:
-# - Loads "Multiclass Diabetes Dataset.csv" from the current folder
-# - Binary target: 0 = no diabetes, 1 = diabetic
-# - If Class == 2 exists, it will be dropped
-# - Modern glassy UI, interactive training, metrics, visuals, and practical advice
-
 import os
 import numpy as np
 import pandas as pd
@@ -18,200 +11,125 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, confusion_matrix, roc_curve
 )
+from sklearn.calibration import calibration_curve
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.inspection import permutation_importance
 
 import plotly.express as px
 import plotly.graph_objects as go
 
-# -----------------------------------------------------------------------------
-# Page config and style
-# -----------------------------------------------------------------------------
-st.set_page_config(page_title="Diabetes Classifier", page_icon="🩺", layout="wide")
+# ------------------------------- Page & Theme --------------------------------
+st.set_page_config(
+    page_title="Diabetes Risk Tool",
+    page_icon="🩺",
+    layout="wide"
+)
 
 st.markdown("""
 <style>
-:root {
-  --card-bg: rgba(255,255,255,0.06);
-  --border: 1px solid rgba(255,255,255,0.15);
+:root{
+  --bg: #f6f9fc;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #334155;
+  --border: #e5e7eb;
+  --accent: #1976d2;
+  --accent-weak: #e3f2fd;
+  --ok: #16a34a;
+  --warn: #f59e0b;
+  --risk: #dc2626;
 }
 
-/* Main app background */
-[data-testid="stAppViewContainer"] {
-  background: radial-gradient(1200px 600px at 10% 10%, #2a2a72 0%, #009ffd 35%, #0b1b2b 100%);
-}
-.block-container { padding-top: 1.5rem; }
+/* Background */
+[data-testid="stAppViewContainer"] { background: var(--bg); }
 
-/* Glass card style */
-.glass {
-  background: var(--card-bg);
-  border: var(--border);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-  border-radius: 24px;
-  padding: 1.1rem 1.2rem 0.8rem 1.2rem;
-  backdrop-filter: blur(8px);
+/* Container spacing */
+.block-container { padding-top: 1.0rem; }
+
+/* Card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(2,6,23,0.06);
+  padding: 1.0rem 1.1rem 0.8rem 1.1rem;
 }
 
-/* Text colors */
-h1, h2, h3, h4 { color: #f7fafc; }
-p, li, label, span, input, .stMarkdown { color: #f1f5f9 !important; }
+/* Typography */
+h1, h2, h3, h4 { color: var(--text); letter-spacing: .2px; }
+p, li, label, span, input, .stMarkdown { color: var(--muted) !important; }
+.kpi { font-weight: 700; color: var(--text); font-size: 1.1rem; }
 
-/* Badges and metrics */
-.metric-chip {
-  display: inline-block;
-  padding: 8px 12px;
-  border-radius: 12px;
-  margin: 4px 8px 8px 0;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.15);
-}
-.badge {
-  display:inline-block; padding:6px 10px; border-radius:10px;
-  border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.06);
-  margin-left:8px; font-size:0.9rem;
-}
-.small-note { font-size: 0.9rem; opacity: 0.95; }
-hr { border: none; height: 1px; background: rgba(255,255,255,0.15); margin: 0.8rem 0; }
-
-/* Inputs, selects, textareas */
+/* Inputs */
 input, select, textarea, .stNumberInput input, .stTextInput input {
-  background-color: rgba(20, 20, 20, 0.85) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  border-radius: 8px !important;
-}
-
-/* Closed dropdown */
-.stSelectbox div[data-baseweb="select"] > div {
-  background-color: rgba(20, 20, 20, 0.85) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  border-radius: 8px !important;
-}
-
-/* Dropdown menu list */
-.stSelectbox div[data-baseweb="select"] ul {
-  background-color: rgba(20, 20, 20, 0.95) !important;
-  color: #f1f5f9 !important;
-  border-radius: 8px !important;
-}
-
-/* Dropdown menu options */
-.stSelectbox div[data-baseweb="select"] li {
-  background-color: transparent !important;
-  color: #f1f5f9 !important;
-}
-.stSelectbox div[data-baseweb="select"] li:hover {
-  background-color: rgba(255, 255, 255, 0.15) !important;
-}
-
-/* File uploader box */
-.stFileUploader div[data-testid="stFileUploaderDropzone"] {
-  background-color: rgba(20, 20, 20, 0.85) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  border-radius: 8px !important;
-}
-
-/* ---------- SIDEBAR ---------- */
-section[data-testid="stSidebar"] {
-  background: rgba(12, 20, 28, 0.82) !important;
-  backdrop-filter: blur(10px);
-  border-right: 1px solid rgba(255,255,255,0.12);
-}
-section[data-testid="stSidebar"] * { color: #f1f5f9 !important; }
-
-/* Sidebar inputs */
-section[data-testid="stSidebar"] input,
-section[data-testid="stSidebar"] select,
-section[data-testid="stSidebar"] textarea,
-section[data-testid="stSidebar"] .stNumberInput input,
-section[data-testid="stSidebar"] .stTextInput input {
-  background-color: rgba(20, 20, 20, 0.9) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  background-color: #ffffff !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 10px !important;
+  height: 42px !important;
+}
+input:focus, select:focus, textarea:focus,
+.stNumberInput input:focus, .stTextInput input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(25,118,210,0.15);
+  outline: none;
 }
 
-/* Sidebar dropdown closed */
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div {
-  background-color: rgba(20, 20, 20, 0.9) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-  border-radius: 10px !important;
-}
-
-/* Sidebar dropdown menu */
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] ul {
-  background-color: rgba(15, 15, 15, 0.98) !important;
-  color: #f1f5f9 !important;
-  border-radius: 10px !important;
-}
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] li {
-  background: transparent !important; color: #f1f5f9 !important;
-}
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] li:hover {
-  background: rgba(255,255,255,0.12) !important;
-}
-
-/* Sidebar sliders */
-section[data-testid="stSidebar"] [data-testid="stSlider"] div[role="slider"] {
-  background: #00b3ff !important;
-  border: 2px solid rgba(255,255,255,0.25) !important;
-  box-shadow: 0 0 0 4px rgba(0,179,255,0.15);
-}
-section[data-testid="stSidebar"] [data-testid="stSlider"] > div > div > div:nth-child(2) {
-  background: rgba(255,255,255,0.2) !important; /* track filled */
-}
-section[data-testid="stSidebar"] [data-testid="stSlider"] > div > div > div:nth-child(1) {
-  background: rgba(255,255,255,0.12) !important; /* track background */
-}
-
-/* Sidebar file uploader */
-section[data-testid="stSidebar"] div[data-testid="stFileUploaderDropzone"] {
-  background-color: rgba(20, 20, 20, 0.9) !important;
-  color: #f1f5f9 !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  border-radius: 12px !important;
-}
-
-/* Sidebar buttons */
-section[data-testid="stSidebar"] button[kind="secondary"] {
-  background: rgba(255,255,255,0.1) !important;
-  color: #f7fafc !important;
-  border: 1px solid rgba(255,255,255,0.2) !important;
-  border-radius: 12px !important;
-}
-
-/* Sidebar radios */
-section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] label {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.18);
+/* Buttons */
+.stButton > button {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid #1565c0;
   border-radius: 10px;
-  padding: 6px 10px;
+  height: 42px;
 }
+.stButton > button:hover { filter: brightness(0.95); }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+  background: #ffffff !important;
+  border-right: 1px solid var(--border);
+}
+section[data-testid="stSidebar"] * { color: var(--muted) !important; }
+section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div {
+  background: #fff !important; color: var(--text) !important; border: 1px solid var(--border) !important; border-radius: 10px !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSlider"] > div > div > div:nth-child(2) { background: var(--accent) !important; }
+section[data-testid="stSidebar"] [data-testid="stSlider"] div[role="slider"] { background: var(--accent) !important; }
+
+/* Pills */
+.pill {
+  display:inline-block; padding:6px 10px; border-radius:9999px;
+  background: var(--accent-weak); color: var(--text); border: 1px solid #cfe3fa; font-size:.9rem;
+}
+
+/* Risk banner */
+.banner {
+  border-radius: 12px; padding: 12px 14px; border: 1px solid var(--border);
+}
+.banner.ok   { background: #ecfdf5; border-color: #bbf7d0; }
+.banner.warn { background: #fffbeb; border-color: #fde68a; }
+.banner.risk { background: #fef2f2; border-color: #fecaca; }
+.banner h3 { margin: 0 0 4px 0; font-size: 1.05rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# Data loading
-# -----------------------------------------------------------------------------
+# ------------------------------ Data Loading ---------------------------------
 @st.cache_data
 def load_data(csv_name="Multiclass Diabetes Dataset.csv"):
     if not os.path.exists(csv_name):
         raise FileNotFoundError(f'Could not find "{csv_name}" in the current folder.')
     df = pd.read_csv(csv_name)
-    # Normalize target column name to "Class" if needed
-    rename_map = {c: "Class" for c in df.columns if c.strip().lower() == "class"}
-    if rename_map:
-        df = df.rename(columns=rename_map)
+    # Normalize "Class" name
+    for c in df.columns:
+        if c.strip().lower() == "class":
+            if c != "Class":
+                df = df.rename(columns={c: "Class"})
+            break
     if "Class" not in df.columns:
-        raise ValueError('Dataset must have a "Class" column with values 0 and 1. Rows where Class == 2 will be dropped if present.')
-    # Drop any multiclass value 2 if present
+        raise ValueError('Dataset must include a "Class" column with 0 and 1 labels. Rows with 2 will be dropped if present.')
     if 2 in df["Class"].unique():
         df = df[df["Class"] != 2].copy()
-    # Enforce int labels
     df["Class"] = df["Class"].astype(int)
     return df
 
@@ -221,78 +139,55 @@ except Exception as e:
     st.error(str(e))
     st.stop()
 
-# Keep only numeric features for modeling
+# Numeric features only for modeling
 num_cols = [c for c in df.columns if c != "Class" and np.issubdtype(df[c].dtype, np.number)]
 if not num_cols:
-    st.error("No numeric feature columns found. Add numeric predictors besides the Class column.")
+    st.error("No numeric feature columns found besides Class.")
     st.stop()
 
-# -----------------------------------------------------------------------------
-# Sidebar controls
-# -----------------------------------------------------------------------------
+# ------------------------------- Sidebar -------------------------------------
 with st.sidebar:
-    st.title("🩺 Diabetes Classifier")
-    st.caption("Binary: 0 = no diabetes, 1 = diabetic")
-
-    threshold = st.slider("Decision threshold", 0.10, 0.90, 0.50, 0.01)
-
-    model_name = st.selectbox("Algorithm", ["Logistic Regression", "Random Forest", "Gradient Boosting"], index=0)
-
-    if model_name == "Logistic Regression":
-        C = st.slider("C (inverse regularization)", 0.01, 5.0, 1.0, 0.01)
-        penalty = st.selectbox("Penalty", ["l2"], index=0)
-    elif model_name == "Random Forest":
-        rf_estimators = st.slider("Trees", 100, 1000, 300, 50)
-        rf_depth = st.selectbox("Max depth", [None, 3, 5, 8, 12, 16], index=0)
-    else:
-        gb_learn_rate = st.slider("Learning rate", 0.01, 0.5, 0.05, 0.01)
-        gb_estimators = st.slider("Estimators", 100, 1000, 300, 50)
-
-    test_size = st.slider("Test size", 0.1, 0.4, 0.2, 0.05)
+    st.header("Configuration")
+    algo = st.selectbox("Model", ["Logistic Regression", "Random Forest", "Gradient Boosting"])
+    threshold = st.slider("Decision threshold", 0.20, 0.80, 0.50, 0.01)
+    test_size = st.slider("Test size", 0.10, 0.40, 0.20, 0.05)
     random_state = st.number_input("Random state", min_value=0, value=42, step=1)
 
-# -----------------------------------------------------------------------------
-# Header
-# -----------------------------------------------------------------------------
-st.markdown('<div class="glass">', unsafe_allow_html=True)
-st.title("Diabetes Risk Classifier")
-st.markdown(
-    """
-    <div class="small-note">
-    Source: <b>Multiclass Diabetes Dataset.csv</b>
-    <span class="badge">Binary classification</span>
-    <span class="badge">0 = no diabetes</span>
-    <span class="badge">1 = diabetic</span>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    if algo == "Logistic Regression":
+        C = st.slider("C (inverse regularization strength)", 0.01, 5.0, 1.0, 0.01)
+    elif algo == "Random Forest":
+        n_estimators = st.slider("Trees", 100, 1000, 300, 50)
+        max_depth = st.selectbox("Max depth", [None, 3, 5, 8, 12, 16], index=0)
+    else:
+        gb_lr = st.slider("Learning rate", 0.01, 0.5, 0.05, 0.01)
+        gb_estimators = st.slider("Estimators", 100, 1000, 300, 50)
 
-# Quick class balance
-cls_counts = df["Class"].value_counts().rename({0: "No Diabetes", 1: "Diabetic"})
-col_a, col_b = st.columns([1.1, 1.9], gap="large")
-with col_a:
-    st.subheader("Class balance")
-    pie = px.pie(values=cls_counts.values, names=cls_counts.index, hole=0.45)
+# ------------------------------ Header & Summary ------------------------------
+st.title("Diabetes Risk Tool")
+st.caption("For education and decision support only. Not a diagnostic device.")
+
+top = st.columns([1.2, 1.8])
+with top[0]:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("Dataset snapshot")
+    cls_counts = df["Class"].value_counts().rename({0: "No diabetes", 1: "Diabetic"})
+    pie = px.pie(values=cls_counts.values, names=cls_counts.index, hole=0.5)
     pie.update_traces(textinfo="percent+label")
     st.plotly_chart(pie, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-with col_b:
-    st.subheader("Feature overview")
-    sample_df = df.sample(min(len(df), 600), random_state=random_state)
-    # Correlation heatmap for up to 12 numeric cols
+with top[1]:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("Feature summary")
+    # Show correlations to outcome for first 12 numeric columns
     view_cols = num_cols[:12]
-    if len(view_cols) >= 2:
-        corr = sample_df[view_cols + ["Class"]].corr()
-        heat = px.imshow(corr, text_auto=False, aspect="auto", title="Correlation heatmap")
-        st.plotly_chart(heat, use_container_width=True)
-    else:
-        st.info("Need at least two numeric columns to build a heatmap.")
-st.markdown('</div>', unsafe_allow_html=True)
+    corr = df[view_cols + ["Class"]].corr()
+    heat = px.imshow(corr, color_continuous_scale="RdBu_r", zmin=-1, zmax=1)
+    heat.update_layout(height=400)
+    st.plotly_chart(heat, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# Train-test split and model
-# -----------------------------------------------------------------------------
+# ------------------------------ Train & Evaluate ------------------------------
 X = df[num_cols].copy()
 y = df["Class"].copy()
 
@@ -300,172 +195,160 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=test_size, stratify=y, random_state=random_state
 )
 
-def build_model(model_name):
-    if model_name == "Logistic Regression":
-        model = LogisticRegression(penalty=penalty, C=C, solver="lbfgs", max_iter=1000)
-        needs_scale = True
-    elif model_name == "Random Forest":
-        model = RandomForestClassifier(n_estimators=rf_estimators, max_depth=rf_depth, random_state=42)
-        needs_scale = False
-    else:
-        model = GradientBoostingClassifier(learning_rate=gb_learn_rate, n_estimators=gb_estimators, random_state=42)
-        needs_scale = False
+def build_pipeline(name):
+    if name == "Logistic Regression":
+        model = LogisticRegression(C=C, solver="lbfgs", max_iter=2000)
+        scaler = StandardScaler()
+        pre = ColumnTransformer([("num", scaler, list(range(X_train.shape[1])))], remainder="drop")
+        return Pipeline([("pre", pre), ("clf", model)])
+    if name == "Random Forest":
+        model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+        pre = ColumnTransformer([("num", "passthrough", list(range(X_train.shape[1])))], remainder="drop")
+        return Pipeline([("pre", pre), ("clf", model)])
+    model = GradientBoostingClassifier(learning_rate=gb_lr, n_estimators=gb_estimators, random_state=42)
+    pre = ColumnTransformer([("num", "passthrough", list(range(X_train.shape[1])))], remainder="drop")
+    return Pipeline([("pre", pre), ("clf", model)])
 
-    pre = ("scale", StandardScaler()) if needs_scale else ("identity", "passthrough")
-    pipeline = Pipeline([
-        ("pre", ColumnTransformer([("num", pre[1], list(range(X_train.shape[1])))], remainder="drop")),
-        ("clf", model)
-    ])
-    return pipeline
-
-clf = build_model(model_name)
-clf.fit(X_train, y_train)
+pipe = build_pipeline(algo)
+pipe.fit(X_train, y_train)
 
 def proba_and_pred(model, X, thr):
-    if hasattr(model, "predict_proba"):
-        p = model.predict_proba(X)[:, 1]
-    else:
-        raw = model.decision_function(X)
-        p = (raw - raw.min()) / (raw.max() - raw.min() + 1e-9)
-    yhat = (p >= thr).astype(int)
-    return p, yhat
+    proba = model.predict_proba(X)[:, 1] if hasattr(model, "predict_proba") else None
+    if proba is None:
+        # approximate probability using decision_function range
+        dfc = model.decision_function(X)
+        proba = (dfc - dfc.min()) / (dfc.max() - dfc.min() + 1e-9)
+    pred = (proba >= thr).astype(int)
+    return proba, pred
 
-prob_test, pred_test = proba_and_pred(clf, X_test, threshold)
-prob_train, pred_train = proba_and_pred(clf, X_train, threshold)
+prob_tr, pred_tr = proba_and_pred(pipe, X_train, threshold)
+prob_te, pred_te = proba_and_pred(pipe, X_test, threshold)
 
-# -----------------------------------------------------------------------------
-# Metrics and visuals
-# -----------------------------------------------------------------------------
-st.markdown('<div class="glass">', unsafe_allow_html=True)
-st.subheader("Model performance")
-
-def metric_row(y_true, pred, prob):
+def metrics_block(y_true, pred, prob):
     acc = accuracy_score(y_true, pred)
     prec = precision_score(y_true, pred, zero_division=0)
     rec = recall_score(y_true, pred, zero_division=0)
     f1 = f1_score(y_true, pred, zero_division=0)
-    try:
-        auc = roc_auc_score(y_true, prob)
-    except Exception:
-        auc = np.nan
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.markdown(f'<div class="metric-chip">Accuracy<br><b>{acc:.3f}</b></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="metric-chip">Precision<br><b>{prec:.3f}</b></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="metric-chip">Recall<br><b>{rec:.3f}</b></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="metric-chip">F1<br><b>{f1:.3f}</b></div>', unsafe_allow_html=True)
-    c5.markdown(f'<div class="metric-chip">ROC AUC<br><b>{auc:.3f}</b></div>', unsafe_allow_html=True)
+    auc = roc_auc_score(y_true, prob) if len(np.unique(y_true)) == 2 else np.nan
     return acc, prec, rec, f1, auc
 
-st.markdown("**Test set**")
-test_acc, test_prec, test_rec, test_f1, test_auc = metric_row(y_test, pred_test, prob_test)
+acc, prec, rec, f1, auc = metrics_block(y_test, pred_te, prob_te)
 
-st.markdown("**Train set**")
-_ = metric_row(y_train, pred_train, prob_train)
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("Model performance")
 
-# Confusion matrix
-cm = confusion_matrix(y_test, pred_test, labels=[0, 1])
-cm_df = pd.DataFrame(cm, index=["True 0", "True 1"], columns=["Pred 0", "Pred 1"])
-cm_fig = px.imshow(cm_df, text_auto=True, aspect="auto", title="Confusion matrix")
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.markdown(f"<div class='kpi'>Accuracy<br>{acc:.3f}</div>", unsafe_allow_html=True)
+k2.markdown(f"<div class='kpi'>Precision<br>{prec:.3f}</div>", unsafe_allow_html=True)
+k3.markdown(f"<div class='kpi'>Recall<br>{rec:.3f}</div>", unsafe_allow_html=True)
+k4.markdown(f"<div class='kpi'>F1<br>{f1:.3f}</div>", unsafe_allow_html=True)
+k5.markdown(f"<div class='kpi'>ROC AUC<br>{auc:.3f}</div>", unsafe_allow_html=True)
+
+cm = confusion_matrix(y_test, pred_te, labels=[0,1])
+cm_df = pd.DataFrame(cm, index=["True 0","True 1"], columns=["Pred 0","Pred 1"])
+cm_fig = px.imshow(cm_df, text_auto=True, color_continuous_scale="Blues", aspect="auto", title="Confusion matrix")
 st.plotly_chart(cm_fig, use_container_width=True)
 
 # ROC
-try:
-    fpr, tpr, thr = roc_curve(y_test, prob_test)
-    roc_fig = go.Figure()
-    roc_fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines", name="ROC"))
-    roc_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode="lines", name="Chance", line=dict(dash="dash")))
-    roc_fig.update_layout(title=f"ROC Curve (AUC={test_auc:.3f})", xaxis_title="False Positive Rate", yaxis_title="True Positive Rate")
-    st.plotly_chart(roc_fig, use_container_width=True)
-except Exception:
-    st.info("ROC not available for this model.")
-st.caption("Tip: adjust the decision threshold in the sidebar to trade recall vs precision.")
+fpr, tpr, _ = roc_curve(y_test, prob_te)
+roc_fig = go.Figure()
+roc_fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines", name="ROC"))
+roc_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode="lines", name="Chance", line=dict(dash="dash")))
+roc_fig.update_layout(title=f"ROC Curve (AUC={auc:.3f})", xaxis_title="False positive rate", yaxis_title="True positive rate", height=360)
+st.plotly_chart(roc_fig, use_container_width=True)
+
+# Calibration curve
+prob_true, prob_pred = calibration_curve(y_test, prob_te, n_bins=10, strategy="uniform")
+cal = go.Figure()
+cal.add_trace(go.Scatter(x=prob_pred, y=prob_true, mode="lines+markers", name="Calibration"))
+cal.add_trace(go.Scatter(x=[0,1], y=[0,1], mode="lines", name="Ideal", line=dict(dash="dash")))
+cal.update_layout(title="Calibration curve", xaxis_title="Predicted probability", yaxis_title="Observed frequency", height=360)
+st.plotly_chart(cal, use_container_width=True)
+
+st.caption("Adjust the decision threshold in the sidebar to balance false negatives vs false positives.")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# Feature importance
-# -----------------------------------------------------------------------------
-st.markdown('<div class="glass">', unsafe_allow_html=True)
-st.subheader("Top features")
+# ------------------------------ Patient Entry --------------------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("Patient risk check")
 
-def get_importance(pipeline, X_eval):
-    model = pipeline.named_steps["clf"]
-    names = list(X.columns)
-    if hasattr(model, "feature_importances_"):
-        imp = model.feature_importances_
-        return pd.DataFrame({"feature": names, "importance": imp}).sort_values("importance", ascending=False)
-    if hasattr(model, "coef_"):
-        imp = np.abs(model.coef_).ravel()
-        return pd.DataFrame({"feature": names, "importance": imp}).sort_values("importance", ascending=False)
-    try:
-        pi = permutation_importance(pipeline, X_eval, pipeline.predict(X_eval), n_repeats=5, random_state=42)
-        return pd.DataFrame({"feature": names, "importance": pi.importances_mean}).sort_values("importance", ascending=False)
-    except Exception:
-        return None
-
-imp_df = get_importance(clf, X_test)
-if imp_df is not None and not imp_df.empty:
-    bar = px.bar(imp_df.head(15), x="importance", y="feature", orientation="h", title="Top feature importances")
-    st.plotly_chart(bar, use_container_width=True)
-else:
-    st.info("Feature importance not available for this model.")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# Single patient simulator
-# -----------------------------------------------------------------------------
-st.markdown('<div class="glass">', unsafe_allow_html=True)
-st.subheader("Single patient simulator")
-
-with st.form("sim_form"):
+with st.form("patient_form"):
     cols = st.columns(3)
-    inputs = {}
     stats = df[num_cols].describe()
+    patient = {}
     for i, col in enumerate(num_cols):
         c = cols[i % 3]
         vmin = float(np.floor(stats.loc["min", col]))
         vmax = float(np.ceil(stats.loc["max", col]))
         vmean = float(stats.loc["mean", col])
         step = max(0.1, round((vmax - vmin) / 200, 2))
-        inputs[col] = c.number_input(col, min_value=vmin, max_value=vmax, value=float(np.round(vmean, 2)), step=step)
-    submitted = st.form_submit_button("Predict")
+        patient[col] = c.number_input(col, min_value=vmin, max_value=vmax, value=float(np.round(vmean, 2)), step=step)
+    submit = st.form_submit_button("Run assessment")
 
-if submitted:
-    user_row = pd.DataFrame([inputs])[num_cols]
-    user_prob, user_pred = proba_and_pred(clf, user_row, threshold)
-    p = float(user_prob[0])
-    yhat = int(user_pred[0])
+if submit:
+    row = pd.DataFrame([patient])[num_cols]
+    p, yhat = proba_and_pred(pipe, row, threshold)
+    prob = float(p[0])
+    pred = int(yhat[0])
 
-    st.markdown(f"**Predicted class:** `{yhat}`  (0 = no diabetes, 1 = diabetic)")
-    st.markdown(f"**Risk probability:** `{p:.3f}` at threshold `{threshold:.2f}`")
-
-    st.markdown("### 🧭 Guidance")
-    st.info("This is a decision support tool. It is not a diagnosis. Always consult a licensed clinician.")
-    tips_common = [
-        "Aim for 150 minutes per week of moderate activity if your physician approves",
-        "Prefer whole grains, legumes, vegetables, and lean proteins",
-        "Limit sugary drinks and refined carbs",
-        "Prioritize sleep quality and stress reduction",
-    ]
-    if yhat == 1:
-        st.markdown("**Result suggests higher risk**")
-        st.markdown("- Schedule a medical visit for tests like A1C or fasting plasma glucose")
-        st.markdown("- Discuss lifestyle and medication options with a clinician")
-        st.markdown("- Ask about nutrition counseling and a monitored activity plan")
+    # Risk band message
+    if prob < 0.25:
+        klass = "ok"; title = "Low risk estimate"
+        lines = [
+            "Maintain healthy diet patterns with adequate fiber",
+            "Aim for regular physical activity if your clinician approves",
+            "Continue regular checkups and monitoring"
+        ]
+    elif prob < 0.5:
+        klass = "warn"; title = "Moderate risk estimate"
+        lines = [
+            "Consider a clinician visit for baseline labs such as A1C or fasting glucose",
+            "Review nutrition and activity plan",
+            "Track weight, waist size, and blood pressure"
+        ]
     else:
-        st.markdown("**Result suggests lower risk**")
-        st.markdown("- Maintain healthy habits and routine checkups")
-        st.markdown("- Track weight, waist size, and blood pressure")
-        st.markdown("- Reassess if symptoms or risk factors change")
-    st.markdown("**General tips**")
-    st.markdown("\n".join([f"- {t}" for t in tips_common]))
+        klass = "risk"; title = "High risk estimate"
+        lines = [
+            "Schedule a clinician visit soon for diagnostic testing, such as A1C",
+            "Discuss treatment and lifestyle options",
+            "Consider nutrition counseling and a structured activity plan"
+        ]
+
+    st.markdown(f"<div class='banner {klass}'><h3>{title}</h3>"
+                f"<p>Predicted class: <b>{pred}</b> (0 no diabetes, 1 diabetic)</p>"
+                f"<p>Estimated probability: <b>{prob:.3f}</b> at threshold <b>{threshold:.2f}</b></p></div>",
+                unsafe_allow_html=True)
+    st.markdown("**Suggested next steps**")
+    st.markdown("\n".join([f"- {x}" for x in lines]))
+
 st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# Dataset peek
-# -----------------------------------------------------------------------------
-st.markdown('<div class="glass">', unsafe_allow_html=True)
-st.subheader("Dataset preview")
-st.dataframe(df.head(25), use_container_width=True)
-st.caption("Model uses only numeric columns as features. Target is the Class column.")
+# ------------------------------ Feature Effects ------------------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("Feature signals")
+
+# Simple coefficient or importance view
+model = pipe.named_steps["clf"]
+names = num_cols
+imp_df = None
+if hasattr(model, "coef_"):
+    vals = model.coef_.ravel()
+    imp_df = pd.DataFrame({"feature": names, "signal": vals}).sort_values("signal", ascending=False)
+    fig = px.bar(imp_df, x="signal", y="feature", orientation="h", title="Logistic regression coefficients")
+    st.plotly_chart(fig, use_container_width=True)
+elif hasattr(model, "feature_importances_"):
+    vals = model.feature_importances_
+    imp_df = pd.DataFrame({"feature": names, "importance": vals}).sort_values("importance", ascending=False)
+    fig = px.bar(imp_df, x="importance", y="feature", orientation="h", title=f"{algo} feature importance")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Feature importance not available for this model.")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ------------------------------ Data Preview ---------------------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("Data preview")
+st.dataframe(df.head(30), use_container_width=True)
+st.caption("Target column: Class. Values 0 and 1 are used. Any 2s are removed.")
 st.markdown('</div>', unsafe_allow_html=True)
